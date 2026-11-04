@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Santul · Pantallas de planta</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --bar-bg: rgba(15, 17, 23, 0.92);
+    --text: #e8eaed;
+    --muted: #9aa0a6;
+    --accent: #4da3ff;
+    --dot-off: #3a3f4a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  #stage {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .slide {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    background: var(--bg);
+  }
+  .slide.active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    z-index: 2;
+  }
+  img.slide { object-fit: contain; }
+  #controlDock {
+    position: fixed; left: 0; right: 0; bottom: 0; height: 12px;
+    z-index: 20;
+  }
+  #bar {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 20px;
+    height: 36px;
+    padding: 0 52px;
+    background: #0f131b;
+    border-top: 1px solid rgba(255,255,255,.1);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.2;
+    z-index: 20;
+    opacity: 0;
+    transform: translateY(100%);
+    pointer-events: none;
+  }
+  #controlDock:hover #bar,
+  #controlDock.peek #bar,
+  #bar:has(:focus-visible) {
+    opacity: 1; transform: translateY(0); pointer-events: auto;
+  }
+  #identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  #identity::before { content: ""; width: 3px; height: 17px; border-radius: 3px; background: #57eedc; flex-shrink: 0; }
+  #label { font-weight: 600; letter-spacing: .2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #clock { color: #a7b4c6; font-size: 11px; font-variant-numeric: tabular-nums; min-width: 40px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.09); border-radius: 6px; text-align: center; }
+  #controls { display: flex; align-items: center; gap: 4px; padding: 2px; border: 1px solid rgba(255,255,255,.1); border-radius: 10px; background: rgba(255,255,255,.035); }
+  #bar button, #fsBtn {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 26px; background: transparent; border: 1px solid transparent;
+    color: #c7d2e0; border-radius: 6px; cursor: pointer;
+    font: inherit; font-size: 11px;
+  }
+  #pauseBtn { width: 82px; }
+  #reloadBtn { width: 30px; padding: 0; }
+  /* Siempre visible: objetivo ADB fijo a 24 px del borde derecho e inferior. */
+  #fsBtn {
+    position: fixed; right: 8px; bottom: 8px; z-index: 30;
+    width: 32px; height: 32px; padding: 0;
+    background: rgba(12,17,25,.85);
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 8px;
+  }
+  #bar button svg, #fsBtn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  #bar button:hover, #fsBtn:hover { color: #fff; background: rgba(255,255,255,.1); }
+  #bar button:focus-visible, #fsBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #navigation { justify-self: end; display: flex; align-items: center; gap: 15px; min-width: 0; }
+  #position { color: #a7b4c6; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #dots { display: flex; gap: 7px; align-items: center; }
+  .dot { width: 7px; height: 7px; padding: 0; border-radius: 50%; background: #465263; cursor: pointer; }
+  .dot.on { background: #57eedc; width: 22px; border-radius: 6px; }
+  @media (max-width: 700px) {
+    #bar { padding: 0 48px; gap: 8px; font-size: 11px; }
+    #identity { gap: 6px; }
+    #clock { display: none; }
+    #navigation { gap: 7px; }
+    #position { display: none; }
+    #dots { gap: 4px; }
+    .dot.on { width: 14px; }
+    #pauseBtn { width: 66px; }
+  }
+  body.locked #stage, body.locked #controlDock { display: none; }
+  #accessGate {
+    position: fixed; inset: 0; z-index: 25;
+    display: flex; align-items: center; justify-content: center;
+    padding: 28px;
+    background: #0b0d12;
+  }
+  #accessGate[hidden] { display: none; }
+  .access-card { width: 100%; max-width: 400px; padding: 34px; background: #141820; border: 1px solid #2b313d; border-radius: 18px; color: #e8eaed; }
+  .access-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 30px; font-size: 12px; letter-spacing: 2px; font-weight: 700; color: #aeb8c8; }
+  .access-brand::before { content: ""; width: 10px; height: 10px; border-radius: 3px; background: #ed1427; }
+  .access-card h1 { font-size: 27px; line-height: 1.15; margin: 0 0 12px; letter-spacing: -.6px; }
+  .access-card p { font-size: 14px; line-height: 1.5; color: #aeb8c8; margin: 0 0 26px; }
+  .access-card label { display: block; font-size: 12px; color: #ccd5e1; margin-bottom: 8px; }
+  .password-field { position: relative; }
+  #accessPassword { display: block; width: 100%; height: 48px; padding: 0 78px 0 14px; border: 1px solid #3a4351; border-radius: 8px; background: #0b0f16; color: #fff; font: inherit; font-size: 16px; }
+  #accessPassword:focus { outline: 2px solid #ed1427; outline-offset: 2px; }
+  #passwordToggle { position: absolute; right: 6px; top: 8px; height: 32px; padding: 0 10px; background: transparent; border: 0; color: #aeb8c8; font-size: 12px; cursor: pointer; }
+  #accessError { color: #ff9caa; font-size: 12px; min-height: 32px; margin: 8px 0 4px; }
+  #accessSubmit { width: 100%; height: 46px; border: 0; border-radius: 8px; background: #ed1427; color: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+  #accessSubmit:hover { background: #cf1022; }
+  #accessSubmit:focus-visible, #passwordToggle:focus-visible { outline: 2px solid white; outline-offset: 3px; }
+  .access-foot { margin-top: 22px; color: #778394; font-size: 11px; text-align: center; }
+</style>
+</head>
+<body class="locked">
+  <section id="accessGate" aria-label="Acceso a pantallas">
+    <form id="accessForm" class="access-card">
+      <div class="access-brand">SANTUL / TV PLANTA</div>
+      <h1>Acceso a pantallas</h1>
+      <p>Ingresa la contraseña para iniciar la presentación.</p>
+      <label for="accessPassword">Contraseña</label>
+      <div class="password-field">
+        <input id="accessPassword" type="password" autocomplete="current-password" required aria-describedby="accessError" placeholder="Escribe la contraseña">
+        <button id="passwordToggle" type="button" aria-label="Mostrar contraseña" aria-pressed="false">Mostrar</button>
+      </div>
+      <div id="accessError" role="status" aria-live="polite"></div>
+      <button id="accessSubmit" type="submit">Entrar</button>
+      <div class="access-foot">Pantallas de información · Santul</div>
+    </form>
+  </section>
+  <div id="stage"></div>
+
+  <div id="controlDock" class="peek">
+  <div id="bar">
+    <div id="identity">
+      <span id="label">Portada</span>
+      <span id="clock">30s</span>
+    </div>
+    <div id="controls" role="group" aria-label="Controles de presentación">
+      <button id="pauseBtn" type="button">Pausar</button>
+      <button id="reloadBtn" type="button" title="Recargar contenido actual" aria-label="Recargar contenido actual">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5"/><path d="M19.4 12a7.5 7.5 0 1 0-1.8 5.1M20 12l-3-3"/></svg>
+      </button>
+
+    </div>
+    <div id="navigation">
+      <div id="dots"></div>
+      <span id="position">01 / 05</span>
+    </div>
+  </div>
+
+  </div>
+  <button id="fsBtn" type="button" title="Pantalla completa" aria-label="Pantalla completa">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/></svg>
+      </button>
+
+<script>
+/* =====================================================================
+   CONFIGURA AQUÍ TUS REPORTES: url + duración en segundos.
+   Agrega, quita o reordena elementos del arreglo libremente.
+   ===================================================================== */
+const slides = [
+  // Portada 30s
+  { type: "image", title: "Portada", url: "./imagenes/portada.png", duration: 30, preloadLead: 2 },
+  // Producción diaria
+  { type: "report", title: "Producción diaria", url: "https://app.powerbi.com/reportEmbed?reportId=b4537587-4c8a-4e25-9181-bbc25227bc28&autoAuth=true&ctid=545a22f8-d8a5-4f29-94f6-fdf8715e9268&pageName=d601934302e5c6a0e65e&navContentPaneEnabled=false&filterPaneEnabled=false", duration: 90, preloadLead: 10 },
+  // Certificación ISO 9001 60s
+  { type: "image", title: "Infografía", url: "./imagenes/info1.png", duration: 60, preloadLead: 2 },
+  // Días sin accidentes 
+  { type: "report", title: "Días sin accidentes", url: "https://app.powerbi.com/reportEmbed?reportId=b4537587-4c8a-4e25-9181-bbc25227bc28&autoAuth=true&ctid=545a22f8-d8a5-4f29-94f6-fdf8715e9268&pageName=b254ae86782a17d3194c&navContentPaneEnabled=false&filterPaneEnabled=false", duration: 60, preloadLead: 10 },
+  // Cumplimiento CEDIS
+  { type: "report", title: "Cumplimiento CEDIS", url: "https://app.powerbi.com/reportEmbed?reportId=b4537587-4c8a-4e25-9181-bbc25227bc28&autoAuth=true&ctid=545a22f8-d8a5-4f29-94f6-fdf8715e9268&pageName=5d11ce5c117552d221b5&navContentPaneEnabled=false&filterPaneEnabled=false", duration: 60, preloadLead: 9 },  
+  // Emplado del día de ayer
+  { type: "report", title: "Empleado del Dia de Ayer", url: "https://app.powerbi.com/reportEmbed?reportId=b4537587-4c8a-4e25-9181-bbc25227bc28&autoAuth=true&ctid=545a22f8-d8a5-4f29-94f6-fdf8715e9268&pageName=a5478ca6a716a695b7a4&navContentPaneEnabled=false&filterPaneEnabled=false", duration: 60, preloadLead: 9 },  
+  // Politica Calidad
+  { type: "image", title: "Política de Calidad", url: "./imagenes/politica.jpeg", duration: 60, preloadLead: 2 },
+  // Producción
+  { type: "report", title: "Producción", url: "https://app.powerbi.com/reportEmbed?reportId=b4537587-4c8a-4e25-9181-bbc25227bc28&autoAuth=true&ctid=545a22f8-d8a5-4f29-94f6-fdf8715e9268&pageName=96cb500aaec1c7f0db30&navContentPaneEnabled=false&filterPaneEnabled=false", duration: 90, preloadLead: 15 },
+  // Empleado del mes1
+  { type: "image", title: "Empleado del Mes 1", url: "./imagenes/1.jpeg", duration: 15, preloadLead: 2 },
+  // Empleado del mes2
+  { type: "image", title: "Empleado del Mes 2", url: "./imagenes/2.jpeg", duration: 15, preloadLead: 2 },
+  // Empleado del mes3
+  { type: "image", title: "Empleado del Mes 3", url: "./imagenes/3.jpeg", duration: 15, preloadLead: 2 },
+  // Empleado del mes4
+  { type: "image", title: "Empleado del Mes 4", url: "./imagenes/4.jpeg", duration: 15, preloadLead: 2 },
+];
+
+// Segundos ANTES del cambio en que se empieza a precargar CADA reporte.
+// Si un reporte no trae "preloadLead" propio, se usa este valor por defecto.
+// Para el reporte pesado, agrégale su propio "preloadLead: 30" en su objeto
+// dentro de "slides", por ejemplo:
+//   { url: "...", duration: 60, preloadLead: 30 }
+const DEFAULT_PRELOAD_LEAD_SECONDS = 8;
+/* ===================================================================== */
+
+const stage    = document.getElementById('stage');
+const label    = document.getElementById('label');
+const clock    = document.getElementById('clock');
+const position = document.getElementById('position');
+const dotsEl   = document.getElementById('dots');
+const pauseBtn = document.getElementById('pauseBtn');
+const reloadBtn = document.getElementById('reloadBtn');
+const fsBtn    = document.getElementById('fsBtn');
+
+let current = 0;
+let secondsLeft = 0;
+let paused = false;
+let preloadedNext = false;
+// Versión TV: sin animaciones continuas ni transiciones de contenido.
+
+// Máximo 2 elementos: el visible y el siguiente durante su precarga.
+// Los iframes se eliminan al salir de su reporte.
+const loaded = new Map();
+
+function ensureLoaded(index) {
+  if (!loaded.has(index)) {
+    const slide = slides[index];
+    const f = document.createElement(slide.type === 'image' ? 'img' : 'iframe');
+    f.className = 'slide';
+    if (slide.type === 'image') {
+      f.alt = slide.title;
+      f.decoding = 'async';
+      f.draggable = false;
+    } else {
+      f.title = slide.title;
+      f.allowFullscreen = true;
+    }
+    f.src = slide.url;
+    stage.appendChild(f);
+    loaded.set(index, f);
+  }
+  return loaded.get(index);
+}
+
+function destroyLoaded(index) {
+  const f = loaded.get(index);
+  if (!f) return;
+
+  // Quitar src primero ayuda a detener/liberar el contenido embebido.
+  if (f.tagName === 'IFRAME') {
+    try { f.src = 'about:blank'; } catch (_) {}
+  }
+  f.remove();
+  loaded.delete(index);
+}
+
+function keepOnly(indicesToKeep) {
+  const keep = new Set(indicesToKeep);
+  [...loaded.keys()].forEach(index => {
+    if (!keep.has(index)) destroyLoaded(index);
+  });
+}
+
+function updateVisibility() {
+  loaded.forEach((f, idx) => f.classList.toggle('active', idx === current));
+}
+
+function reloadCurrent() {
+  keepOnly([current]);
+  preloadedNext = false;
+  destroyLoaded(current);
+  ensureLoaded(current);
+  updateVisibility();
+}
+
+// Puntos de navegación (uno por reporte)
+const dots = slides.map((_, i) => {
+  const d = document.createElement('div');
+  d.className = 'dot';
+  d.title = slides[i].title;
+  d.addEventListener('click', () => goTo(i));
+  dotsEl.appendChild(d);
+  return d;
+});
+
+function render() {
+  dots.forEach((d, i) => d.classList.toggle('on', i === current));
+  label.textContent = slides[current].title;
+  label.title = slides[current].title;
+  position.textContent = `${String(current + 1).padStart(2, '0')} / ${String(slides.length).padStart(2, '0')}`;
+  clock.textContent = `${secondsLeft}s`;
+}
+
+function goTo(index) {
+  // Reutiliza el contenido precargado y evita conservar un tercer elemento.
+  keepOnly([current, index]);
+  ensureLoaded(index);
+  current = index;
+  secondsLeft = slides[current].duration;
+  preloadedNext = false;
+  updateVisibility();
+  // Cambio directo: el contenido anterior se libera inmediatamente.
+  keepOnly([current]);
+  render();
+}
+
+function tick() {
+  if (paused) return;
+  secondsLeft--;
+
+  // Solo hasta el tramo final se prepara el siguiente en segundo plano.
+  // Usa el "preloadLead" propio del reporte que sigue (o el valor por defecto).
+  const nextIndex = (current + 1) % slides.length;
+  const lead = slides[nextIndex].preloadLead ?? DEFAULT_PRELOAD_LEAD_SECONDS;
+  if (!preloadedNext && secondsLeft <= lead) {
+    // Antes de precargar, garantizamos que no haya basura de una navegación manual.
+    keepOnly([current]);
+    ensureLoaded(nextIndex); // máximo: actual + siguiente
+    preloadedNext = true;
+  }
+
+  if (secondsLeft <= 0) {
+    goTo((current + 1) % slides.length);
+  } else {
+    render();
+  }
+}
+
+function togglePause() {
+  paused = !paused;
+  pauseBtn.textContent = paused ? 'Reanudar' : 'Pausar';
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen();
+  }
+}
+
+pauseBtn.addEventListener('click', togglePause);
+reloadBtn.addEventListener('click', reloadCurrent);
+fsBtn.addEventListener('click', toggleFullscreen);
+
+document.addEventListener('keydown', (e) => {
+  if (document.body.classList.contains('locked')) return;
+  if (e.key === 'ArrowRight') goTo((current + 1) % slides.length);
+  else if (e.key === 'ArrowLeft') goTo((current - 1 + slides.length) % slides.length);
+  else if (e.code === 'Space') { e.preventDefault(); togglePause(); }
+  else if (e.key === 'f' || e.key === 'F') toggleFullscreen();
+  else if (e.key === 'r' || e.key === 'R') reloadCurrent();
+});
+
+/* Acceso básico para enlaces casuales; no sustituye autenticación de servidor.
+   Cambia esta contraseña de prueba antes de compartir la página. */
+const ACCESS_PASSWORD = 'Santul2026';
+// Recuerda el acceso en este perfil del navegador hasta borrar los datos del sitio.
+const ACCESS_STORAGE_KEY = 'santul-tv-demo-access-v1';
+const accessForm = document.getElementById('accessForm');
+const accessPassword = document.getElementById('accessPassword');
+const accessError = document.getElementById('accessError');
+const passwordToggle = document.getElementById('passwordToggle');
+let presentationStarted = false;
+
+function startPresentation() {
+  if (presentationStarted) return;
+  presentationStarted = true;
+  document.getElementById('accessGate').hidden = true;
+  document.body.classList.remove('locked');
+  goTo(0);
+  setInterval(tick, 1000);
+  setTimeout(() => document.getElementById('controlDock').classList.remove('peek'), 2200);
+}
+
+passwordToggle.addEventListener('click', () => {
+  const showing = accessPassword.type === 'password';
+  accessPassword.type = showing ? 'text' : 'password';
+  passwordToggle.textContent = showing ? 'Ocultar' : 'Mostrar';
+  passwordToggle.setAttribute('aria-label', showing ? 'Ocultar contraseña' : 'Mostrar contraseña');
+  passwordToggle.setAttribute('aria-pressed', String(showing));
+});
+
+accessPassword.addEventListener('input', () => {
+  accessError.textContent = '';
+  accessPassword.removeAttribute('aria-invalid');
+});
+
+accessForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (accessPassword.value !== ACCESS_PASSWORD) {
+    accessError.textContent = 'La contraseña no es correcta. Intenta de nuevo.';
+    accessPassword.setAttribute('aria-invalid', 'true');
+    accessPassword.focus();
+    return;
+  }
+  try { localStorage.setItem(ACCESS_STORAGE_KEY, 'allowed'); } catch (_) {}
+  accessPassword.value = '';
+  accessPassword.blur();
+  startPresentation();
+});
+
+let accessRemembered = false;
+try { accessRemembered = localStorage.getItem(ACCESS_STORAGE_KEY) === 'allowed'; } catch (_) {}
+if (accessRemembered) startPresentation();
+else accessPassword.focus();
+<!-- Actualización de publicación -->
+// Sin recarga automática del documento: conserva la pantalla completa.
+</script>
+</body>
+</html>
